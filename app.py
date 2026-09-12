@@ -1,5 +1,240 @@
-import streamlit as st
+import folium
 import pandas as pd
+import streamlit as st
+from streamlit_folium import st_folium
+
+# 1. Chargement des données unifiées (votre base de 4 078 points)
+@st.cache_data
+def charger_donnees():
+  df = pd.read_excel('infrastructures_unifiees.xlsx')
+  return df
+
+
+df = charger_donnees()
+import math
+import streamlit as st
+
+# ==========================================
+# MODULE GPS & CALCUL DE DISTANCE FRONTIÈRE
+# ==========================================
+st.sidebar.markdown('---')
+st.sidebar.subheader('📍 Géolocalisation & Terrain')
+
+# Coordonnées approximatives de la frontière malienne proche (ex: région d'Adel Bagrou / Bassikounou)
+# Vous pouvez ajuster ces coordonnées selon votre point de repère frontalier exact
+LAT_FRONTIERE = 15.35  # Latitude indicative de la frontière
+LON_FRONTIERE = -5.50  # Longitude indicative de la frontière
+NOM_FRONTIERE = 'Frontière Mali'
+
+
+# Fonction mathématique pour calculer la distance (en km) entre deux points GPS (Formule de Haversine)
+def calculer_distance_km(lat1, lon1, lat2, lon2):
+  R = 6371  # Rayon de la Terre en km
+  dlat = math.radians(lat2 - lat1)
+  dlon = math.radians(lon2 - lon1)
+  a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(
+      math.radians(lat2)
+  ) * math.sin(dlon / 2) ** 2
+  c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+  return R * c
+
+
+# Simulation de saisie ou récupération GPS mobile
+# Sur Streamlit, on peut proposer un petit sélecteur ou un bouton de géolocalisation navigateur
+mode_gps = st.sidebar.radio(
+    'Mode de position', ['Saisie manuelle / Par défaut', 'Activer mon GPS']
+)
+
+if mode_gps == 'Activer mon GPS':
+  st.sidebar.info(
+      "Autorisez l'accès à la position sur votre navigateur/téléphone."
+  )
+  # Utilisation d'un composant HTML/JS pour récupérer la position réelle du téléphone
+  from streamlit_folium import st_folium
+
+  # Note : Le composant de géolocalisation HTML5 s'intègre via un script dédié ou un composant Streamlit spécial.
+  # Pour l'instant, simulons la position actuelle ou entrons les coordonnées GPS de terrain :
+  lat_user = st.sidebar.number_input(
+      'Votre Latitude actuelle', value=16.3333, format='%.4f'
+  )
+  lon_user = st.sidebar.number_input(
+      'Votre Longitude actuelle', value=-5.7000, format='%.4f'
+  )
+else:
+  # Position par défaut (ex: Adel Bagrou)
+  lat_user = 16.3333
+  lon_user = -5.7000
+  st.sidebar.text('Position par défaut : Adel Bagrou')
+
+# Calcul de la distance vers la frontière
+distance_frontiere = calculer_distance_km(
+    lat_user, lon_user, LAT_FRONTIERE, LON_FRONTIERE
+)
+
+# Affichage de l'indicateur de distance dans l'application
+st.sidebar.metric(
+    label=f'📏 Distance vers {NOM_FRONTIERE}',
+    value=f'{distance_frontiere:.1f} km',
+)
+# ==========================================
+# 2. COLREZ LE CODE DES FILTRES ET DES KPIs ICI :
+# ==========================================
+st.sidebar.header('🔍 Filtres Avancés - Piste 1')
+
+# Filtres géographiques
+if 'wilaya' in df.columns:
+  wilayas = ['Toutes'] + sorted(df['wilaya'].dropna().unique().tolist())
+  choix_wilaya = st.sidebar.selectbox('Sélectionner la Wilaya', wilayas)
+  if choix_wilaya != 'Toutes':
+    df = df[df['wilaya'] == choix_wilaya]
+
+if 'Moughataa' in df.columns:
+  moughataas = ['Toutes'] + sorted(df['Moughataa'].dropna().unique().tolist())
+  choix_moughataa = st.sidebar.selectbox('Sélectionner la Moughataa', moughataas)
+  if choix_moughataa != 'Toutes':
+    df = df[df['Moughataa'] == choix_moughataa]
+
+if 'Commune' in df.columns:
+  communes = ['Toutes'] + sorted(df['Commune'].dropna().unique().tolist())
+  choix_commune = st.sidebar.selectbox('Sélectionner la Commune', communes)
+  if choix_commune != 'Toutes':
+    df = df[df['Commune'] == choix_commune]
+# ==========================================
+# MODULE GPS & CALCUL DE DISTANCE FRONTIÈRE
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("📍 Géolocalisation & Terrain")
+
+LAT_FRONTIERE = 16.3265
+LON_FRONTIERE = -5.0683
+NOM_FRONTIERE = "Frontière Mali (Adel Bagrou)"
+
+
+def calculer_distance_km(lat1, lon1, lat2, lon2):
+  R = 6371
+  dlat = math.radians(lat2 - lat1)
+  dlon = math.radians(lon2 - lon1)
+  a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(
+      math.radians(lat2)
+  ) * math.sin(dlon / 2) ** 2
+  c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+  return R * c
+
+
+mode_gps = st.sidebar.radio(
+    "Mode de position", ["Position par défaut (Adel Bagrou)", "Saisir mes coordonnées GPS"]
+)
+
+if mode_gps == "Saisir mes coordonnées GPS":
+  lat_user = st.sidebar.number_input("Votre Latitude actuelle", value=16.3265, format="%.4f")
+  lon_user = st.sidebar.number_input("Votre Longitude actuelle", value=-5.0683, format="%.4f")
+else:
+  lat_user = 16.3265
+  lon_user = -5.0683
+  st.sidebar.text("Zone : Adel Bagrou")
+
+distance_frontiere = calculer_distance_km(lat_user, lon_user, LAT_FRONTIERE, LON_FRONTIERE)
+
+st.sidebar.metric(
+    label=f"📏 Distance vers {NOM_FRONTIERE}",
+    value=f"{distance_frontiere:.1f} km",
+)
+# ==========================================
+# MODULE ITINÉRAIRE & DISTANCE VERS UN OUVRAGE
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚗 Itinéraire vers une Infrastructure")
+
+if not df.empty and "nom" in df.columns:
+  # Liste des ouvrages disponibles dans la zone filtrée
+  noms_ouvrages = df["nom"].dropna().unique().tolist()
+  choix_ouvrage = st.sidebar.selectbox("Choisir un ouvrage cible", noms_ouvrages)
+
+  if choix_ouvrage:
+    # Récupérer les coordonnées de l'ouvrage choisi
+    ouvrage_cible = df[df["nom"] == choix_ouvrage].iloc[0]
+    lat_cible = ouvrage_cible.get("latitude")
+    lon_cible = ouvrage_cible.get("longitude")
+
+    if pd.notnull(lat_cible) and pd.notnull(lon_cible):
+      # Calcul de la distance depuis votre position (lat_user, lon_user définie plus haut)
+      distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
+
+      st.sidebar.success(
+          f"📍 Distance vers **{choix_ouvrage}** : **{distance_ouvrage:.2f} km**"
+      )
+
+      # Option pour tracer la ligne d'itinéraire sur la carte
+      tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire direct sur la carte", value=True)
+
+      # (Dans votre code de carte Folium, si tracer_ligne est Vrai,
+      # vous pouvez ajouter un folium.PolyLine(locations=[[lat_user, lon_user], [lat_cible, lon_cible]], color='blue', weight=4).add_to(m))
+    else:
+      st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
+# ==========================================
+# LA CARTE FOLIUM ET LES ONGLETS DE LA SUITE
+# ==========================================
+# (Ici tu mets le reste de ton code pour afficher la carte interactive)
+# Filtres thématiques
+st.sidebar.markdown('---')
+if 'categorie' in df.columns:
+  categories = df['categorie'].dropna().unique().tolist()
+  choix_categories = st.sidebar.multiselect(
+      'Filtrer par Catégorie', categories, default=categories
+  )
+  if choix_categories:
+    df = df[df['categorie'].isin(choix_categories)]
+
+if 'type_ouvrage' in df.columns:
+  types_ouvrages = df['type_ouvrage'].dropna().unique().tolist()
+  choix_types = st.sidebar.multiselect(
+      'Type d’ouvrage', types_ouvrages, default=types_ouvrages
+  )
+  if choix_types:
+    df = df[df['type_ouvrage'].isin(choix_types)]
+
+if 'etat' in df.columns:
+  etats = df['etat'].dropna().unique().tolist()
+  choix_etats = st.sidebar.multiselect(
+      "État de l'infrastructure", etats, default=etats
+  )
+  if choix_etats:
+    df = df[df['etat'].isin(choix_etats)]
+
+# Affichage des Indicateurs Clés de Synthèse (KPIs)
+st.subheader('📊 Indicateurs de Synthèse & Couverture Pastorale')
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+  st.metric(label='Ouvrages filtrés', value=f'{len(df)}')
+
+with col2:
+  if 'wilaya' in df.columns:
+    st.metric(label='Wilayas concernées', value=df['wilaya'].nunique())
+  else:
+    st.metric(label='Wilayas', value='-')
+
+with col3:
+  if 'Commune' in df.columns:
+    st.metric(label='Communes couvertes', value=df['Commune'].nunique())
+  else:
+    st.metric(label='Communes', value='-')
+
+with col4:
+  if 'etat' in df.columns:
+    fonctionnels = len(
+        df[df['etat'].astype(str).str.lower().str.contains('fonctionnel|bon', na=False)]
+    )
+    st.metric(label='Opérationnels / Bons', value=fonctionnels)
+  else:
+    st.metric(label='Statut', value='Actif')
+
+st.markdown('---')
+# ==========================================
+# 3. LA SUITE DE VOTRE CODE EXISTANT (la carte Folium, les onglets, etc.)
+# CONTINUE ICI EN UTILISANT LA VARIABLE `df` FILTRÉE :
+# ==========================================
+# (Votre code de carte s'affichera dynamiquement en fonction des filtres choisis ci-dessus)
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
