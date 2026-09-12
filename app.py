@@ -150,9 +150,9 @@ if not df.empty and "nom" in df.columns:
   df["label_affichage"] = (
       df["nom"].astype(str)
       + " ("
-      + df["Commune"].astype(str)
+      + df["commune"].astype(str)
       + " - "
-      + df["Moughataa"].astype(str)
+      + df["moughataa"].astype(str)
       + ")"
   )
 
@@ -167,8 +167,8 @@ if not df.empty and "nom" in df.columns:
     nom_infra = ouvrage_cible.get("nom", "")
     lat_cible = ouvrage_cible.get("latitude")
     lon_cible = ouvrage_cible.get("longitude")
-    moughataa_cible = ouvrage_cible.get("Moughataa", "Non renseignée")
-    commune_cible = ouvrage_cible.get("Commune", "Non renseignée")
+    moughataa_cible = ouvrage_cible.get("moughataa", "Non renseignée")
+    commune_cible = ouvrage_cible.get("commune", "Non renseignée")
     type_ouvrage = ouvrage_cible.get("type_ouvrage", "")
 
     if pd.notnull(lat_cible) and pd.notnull(lon_cible):
@@ -177,8 +177,8 @@ if not df.empty and "nom" in df.columns:
 
       # Affichage clair
       st.sidebar.success(f"📍 **{nom_infra}** ({type_ouvrage})")
-      st.sidebar.markdown(f"- 🏛️ **Moughataa :** {moughataa_cible}")
-      st.sidebar.markdown(f"- 🏘️ **Commune :** {commune_cible}")
+      st.sidebar.markdown(f"- 🏛️ **moughataa :** {moughataa_cible}")
+      st.sidebar.markdown(f"- 🏘️ **commune :** {commune_cible}")
       st.sidebar.metric(label="Distance estimée", value=f"{distance_ouvrage:.2f} km")
 
       tracer_ligne = st.sidebar.checkbox(
