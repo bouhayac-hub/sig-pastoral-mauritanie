@@ -140,37 +140,49 @@ st.sidebar.metric(
     value=f"{distance_frontiere:.1f} km",
 )
 # ==========================================
-# MODULE ITINÉRAIRE & DISTANCE VERS UN OUVRAGE
+# MODULE ITINÉRAIRE & DÉTAILS DE L'OUVRAGE
 # ==========================================
-st.sidebar.markdown("---")
-st.sidebar.subheader("🚗 Itinéraire vers une Infrastructure")
+st.sidebar.markdown('---')
+st.sidebar.subheader('🚗 Itinéraire vers une Infrastructure')
 
-if not df.empty and "nom" in df.columns:
+if not df.empty and 'nom' in df.columns:
   # Liste des ouvrages disponibles dans la zone filtrée
-  noms_ouvrages = df["nom"].dropna().unique().tolist()
-  choix_ouvrage = st.sidebar.selectbox("Choisir un ouvrage cible", noms_ouvrages)
+  noms_ouvrages = df['nom'].dropna().unique().tolist()
+  choix_ouvrage = st.sidebar.selectbox('Choisir un ouvrage cible', noms_ouvrages)
 
   if choix_ouvrage:
-    # Récupérer les coordonnées de l'ouvrage choisi
-    ouvrage_cible = df[df["nom"] == choix_ouvrage].iloc[0]
-    lat_cible = ouvrage_cible.get("latitude")
-    lon_cible = ouvrage_cible.get("longitude")
+    # Récupérer toute la ligne correspondant à l'ouvrage choisi
+    ouvrage_cible = df[df['nom'] == choix_ouvrage].iloc[0]
+
+    # Extraire les coordonnées et les informations administratives
+    lat_cible = ouvrage_cible.get('latitude')
+    lon_cible = ouvrage_cible.get('longitude')
+    moughataa_cible = ouvrage_cible.get('Moughataa', 'Non renseignée')
+    commune_cible = ouvrage_cible.get('Commune', 'Non renseignée')
+    type_ouvrage = ouvrage_cible.get('type_ouvrage', '')
 
     if pd.notnull(lat_cible) and pd.notnull(lon_cible):
-      # Calcul de la distance depuis votre position (lat_user, lon_user définie plus haut)
-      distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
-
-      st.sidebar.success(
-          f"📍 Distance vers **{choix_ouvrage}** : **{distance_ouvrage:.2f} km**"
+      # Calcul de la distance depuis votre position (lat_user, lon_user)
+      distance_ouvrage = calculer_distance_km(
+          lat_user, lon_user, lat_cible, lon_cible
       )
 
-      # Option pour tracer la ligne d'itinéraire sur la carte
-      tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire direct sur la carte", value=True)
+      # Affichage propre des détails administratifs et de la distance
+      st.sidebar.success(f'📍 **{choix_ouvrage}** ({type_ouvrage})')
+      st.sidebar.markdown(f'- 🏛️ **Moughataa :** {moughataa_cible}')
+      st.sidebar.markdown(f'- 🏘️ **Commune :** {commune_cible}')
+      st.sidebar.metric(
+          label='Distance estimée', value=f'{distance_ouvrage:.2f} km'
+      )
 
-      # (Dans votre code de carte Folium, si tracer_ligne est Vrai,
-      # vous pouvez ajouter un folium.PolyLine(locations=[[lat_user, lon_user], [lat_cible, lon_cible]], color='blue', weight=4).add_to(m))
+      # Option pour tracer la ligne sur la carte
+      tracer_ligne = st.sidebar.checkbox(
+          "Afficher l'itinéraire direct sur la carte", value=True
+      )
     else:
-      st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
+      st.sidebar.warning(
+          "Coordonnées GPS absentes pour cet ouvrage de la base."
+      )
 # ==========================================
 # LA CARTE FOLIUM ET LES ONGLETS DE LA SUITE
 # ==========================================
