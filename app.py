@@ -4,7 +4,7 @@ import folium
 from folium.plugins import MarkerCluster
 import pandas as pd
 import streamlit as st
-from streamlit_folium import st_folium
+import streamlit.components.v1 as components # <-- Le nouveau module ultra-léger
 
 # ==========================================
 # 1. CONFIGURATION ET CHARGEMENT DES DONNÉES
@@ -15,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Fonction de calcul de distance (Haversine)
 def calculer_distance_km(lat1, lon1, lat2, lon2):
     R = 6371
     dlat = math.radians(lat2 - lat1)
@@ -24,7 +23,6 @@ def calculer_distance_km(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-# Fonction pour trouver les colonnes sans erreur de majuscule/minuscule
 def trouver_colonne(dataframe, nom_cherche):
     for col in dataframe.columns:
         if col.strip().lower() == nom_cherche.lower():
@@ -33,7 +31,6 @@ def trouver_colonne(dataframe, nom_cherche):
 
 @st.cache_data
 def charger_donnees():
-    # Remplacez par le nom exact de votre fichier Excel s'il est différent
     return pd.read_excel('infrastructures_unifiees.xlsx')
 
 df_source = charger_donnees()
@@ -78,7 +75,7 @@ if col_etat:
         df = df[df[col_etat].isin(choix_etats)]
 
 # ==========================================
-# 3. GÉOLOCALISATION ET ITINÉRAIRE (BARRE LATÉRALE)
+# 3. GÉOLOCALISATION ET ITINÉRAIRE
 # ==========================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
@@ -120,7 +117,6 @@ if not df.empty and col_nom:
         
         if pd.notnull(lat_cible) and pd.notnull(lon_cible):
             distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
-            
             st.sidebar.success(f"📍 **{nom_infra}**")
             st.sidebar.metric(label="Distance estimée (piste/vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
             tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
@@ -147,74 +143,66 @@ with col4:
 st.markdown("---")
 
 # ==========================================
-# 5. CARTE INTERACTIVE FOLIUM (SATELLITE)
+# 5. CARTE INTERACTIVE FOLIUM (OPTIMISÉE)
 # ==========================================
 st.markdown("### 🗺️ Carte d'intervention")
 
-# Initialiser la carte centrée sur la zone de départ
-carte_zone = folium.Map(location=[lat_user, lon_user], zoom_start=8)
+with st.spinner("Génération de la carte en cours..."):
+    carte_zone = folium.Map(location=[lat_user, lon_user], zoom_start=8)
 
-# Ajouter la couche Satellite Hybride Google
-folium.TileLayer(
-    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-    attr='Google',
-    name='Satellite Hybride',
-    overlay=False,
-    control=True
-).add_to(carte_zone)
-folium.LayerControl().add_to(carte_zone)
+    folium.TileLayer(
+        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        attr='Google',
+        name='Satellite Hybride',
+        overlay=False,
+        control=True
+    ).add_to(carte_zone)
+    folium.LayerControl().add_to(carte_zone)
 
-marker_cluster = MarkerCluster().add_to(carte_zone)
+    marker_cluster = MarkerCluster().add_to(carte_zone)
 
-# Ajouter les points d'eau filtrés sur la carte
-if col_lat and col_lon and col_nom:
-    for index, row in df.dropna(subset=[col_lat, col_lon]).iterrows():
-        etat_ouvrage = str(row.get(col_etat, 'Inconnu')).lower()
-        couleur = "green" if "fonctionnel" in etat_ouvrage or "bon" in etat_ouvrage else "red"
-        
-        folium.Marker(
-            location=[row[col_lat], row[col_lon]],
-            popup=f"<b>{row[col_nom]}</b><br>État: {row.get(col_etat, 'N/A')}",
-            icon=folium.Icon(color=couleur, icon="tint")
-        ).add_to(marker_cluster)
+    if col_lat and col_lon and col_nom:
+        for index, row in df.dropna(subset=[col_lat, col_lon]).iterrows():
+            etat_ouvrage = str(row.get(col_etat, 'Inconnu')).lower()
+            couleur = "green" if "fonctionnel" in etat_ouvrage or "bon" in etat_ouvrage else "red"
+            
+            folium.Marker(
+                location=[row[col_lat], row[col_lon]],
+                popup=f"<b>{row[col_nom]}</b><br>État: {row.get(col_etat, 'N/A')}",
+                icon=folium.Icon(color=couleur, icon="tint")
+            ).add_to(marker_cluster)
 
-# Ajouter VOTRE position (Marqueur Rouge)
-folium.Marker(
-    location=[lat_user, lon_user],
-    popup=f"📍 Ma Base : {choix_base}",
-    icon=folium.Icon(color="darkred", icon="user", prefix="fa"),
-).add_to(carte_zone)
-
-# Tracer l'itinéraire direct si demandé
-if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
-    folium.PolyLine(
-        locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
-        color="blue",
-        weight=5,
-        opacity=0.8,
-        tooltip="Itinéraire cible"
+    folium.Marker(
+        location=[lat_user, lon_user],
+        popup=f"📍 Ma Base : {choix_base}",
+        icon=folium.Icon(color="darkred", icon="user", prefix="fa"),
     ).add_to(carte_zone)
 
-# ============================================================
-# 👉 CORRECTION APPLIQUÉE ICI : use_container_width=True 👈
-# ============================================================
-st_folium(carte_zone, use_container_width=True, height=550)
+    if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
+        folium.PolyLine(
+            locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
+            color="blue",
+            weight=5,
+            opacity=0.8,
+            tooltip="Itinéraire cible"
+        ).add_to(carte_zone)
 
-# Téléchargement de la carte en HTML pour usage hors-ligne
-html_data = carte_zone.get_root().render()
-st.download_button(
-    label="🌍 Télécharger la carte en Satellite_Hybride.html",
-    data=html_data,
-    file_name="Satellite_Hybride.html",
-    mime="text/html"
-)
+    # NOUVELLE MÉTHODE D'AFFICHAGE LÉGÈRE (Remplace st_folium)
+    html_data = carte_zone.get_root().render()
+    components.html(html_data, height=600)
+
+    st.download_button(
+        label="🌍 Télécharger la carte en Satellite_Hybride.html",
+        data=html_data,
+        file_name="Satellite_Hybride.html",
+        mime="text/html"
+    )
 
 # ==========================================
 # 6. BASE DE DONNÉES & TÉLÉCHARGEMENTS
 # ==========================================
 st.markdown("### 📋 Base d'inventaire tabulaire")
 
-# Création des liens GPS pour les applications mobiles (Organic Maps / Maps.me)
 if col_lat and col_lon and col_nom:
     df["Lien_GPS_Mobile"] = (
         "geo:" + df[col_lat].astype(str) + "," + df[col_lon].astype(str) 
@@ -222,7 +210,6 @@ if col_lat and col_lon and col_nom:
         + "(" + df[col_nom].astype(str).str.replace(' ', '%20') + ")"
     )
 
-# Affichage du tableau avec configuration de la colonne Lien GPS
 st.dataframe(
     df, 
     use_container_width=True,
