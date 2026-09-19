@@ -4,7 +4,7 @@ import folium
 from folium.plugins import MarkerCluster
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components # <-- Le nouveau module ultra-léger
+import streamlit.components.v1 as components
 
 # ==========================================
 # 1. CONFIGURATION ET CHARGEMENT DES DONNÉES
@@ -25,7 +25,7 @@ def calculer_distance_km(lat1, lon1, lat2, lon2):
 
 def trouver_colonne(dataframe, nom_cherche):
     for col in dataframe.columns:
-        if col.strip().lower() == nom_cherche.lower():
+        if str(col).strip().lower() == nom_cherche.lower():
             return col
     return None
 
@@ -37,7 +37,18 @@ df_source = charger_donnees()
 df = df_source.copy()
 
 # ==========================================
-# 2. FILTRES DANS LA BARRE LATÉRALE
+# 2. NETTOYAGE DES COORDONNÉES GPS (CORRECTION DU BUG)
+# ==========================================
+col_lat = trouver_colonne(df, 'latitude')
+col_lon = trouver_colonne(df, 'longitude')
+
+# Forcer la conversion des virgules en points pour que la carte puisse les lire
+if col_lat and col_lon:
+    df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.strip(), errors='coerce')
+    df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.strip(), errors='coerce')
+
+# ==========================================
+# 3. FILTRES DANS LA BARRE LATÉRALE
 # ==========================================
 st.sidebar.header("🔍 Filtres Avancés")
 
@@ -46,8 +57,6 @@ col_moughataa = trouver_colonne(df, 'Moughataa')
 col_commune = trouver_colonne(df, 'Commune')
 col_etat = trouver_colonne(df, 'etat')
 col_nom = trouver_colonne(df, 'nom')
-col_lat = trouver_colonne(df, 'latitude')
-col_lon = trouver_colonne(df, 'longitude')
 col_type = trouver_colonne(df, 'type_ouvrage')
 
 if col_wilaya:
@@ -68,20 +77,27 @@ if col_commune:
     if choix_commune != 'Toutes':
         df = df[df[col_commune] == choix_commune]
 
+# --- NOUVEAU : FILTRE PAR TYPE D'INFRASTRUCTURE ---
+if col_type:
+    types_infra = sorted(df[col_type].dropna().astype(str).unique().tolist())
+    choix_types = st.sidebar.multiselect("Type d'infrastructure (Puits, Barrage...)", types_infra, default=types_infra)
+    if choix_types:
+        df = df[df[col_type].isin(choix_types)]
+
 if col_etat:
-    etats = df[col_etat].dropna().unique().tolist()
+    etats = sorted(df[col_etat].dropna().astype(str).unique().tolist())
     choix_etats = st.sidebar.multiselect("État de l'infrastructure", etats, default=etats)
     if choix_etats:
         df = df[df[col_etat].isin(choix_etats)]
 
 # ==========================================
-# 3. GÉOLOCALISATION ET ITINÉRAIRE
+# 4. GÉOLOCALISATION ET ITINÉRAIRE
 # ==========================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (16.3265, -5.0683),
+    "Adel Bagrou": (15.5400, -7.0303),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -91,8 +107,8 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=16.3265, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-5.0683, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5400, format="%.4f")
+    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0303, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
 
@@ -118,13 +134,13 @@ if not df.empty and col_nom:
         if pd.notnull(lat_cible) and pd.notnull(lon_cible):
             distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
             st.sidebar.success(f"📍 **{nom_infra}**")
-            st.sidebar.metric(label="Distance estimée (piste/vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
+            st.sidebar.metric(label="Distance estimée (vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
             tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
         else:
             st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
 
 # ==========================================
-# 4. INDICATEURS CLÉS DE SYNTHÈSE (KPIS)
+# 5. INDICATEURS CLÉS DE SYNTHÈSE (KPIS)
 # ==========================================
 st.subheader("📊 Indicateurs de Synthèse & Couverture Pastorale")
 col1, col2, col3, col4 = st.columns(4)
@@ -143,7 +159,7 @@ with col4:
 st.markdown("---")
 
 # ==========================================
-# 5. CARTE INTERACTIVE FOLIUM (OPTIMISÉE)
+# 6. CARTE INTERACTIVE FOLIUM
 # ==========================================
 st.markdown("### 🗺️ Carte d'intervention")
 
@@ -162,32 +178,37 @@ with st.spinner("Génération de la carte en cours..."):
     marker_cluster = MarkerCluster().add_to(carte_zone)
 
     if col_lat and col_lon and col_nom:
-        for index, row in df.dropna(subset=[col_lat, col_lon]).iterrows():
+        # On ne garde que les lignes où les coordonnées sont valides (pas de NaN)
+        df_valide = df.dropna(subset=[col_lat, col_lon])
+        for index, row in df_valide.iterrows():
             etat_ouvrage = str(row.get(col_etat, 'Inconnu')).lower()
             couleur = "green" if "fonctionnel" in etat_ouvrage or "bon" in etat_ouvrage else "red"
             
             folium.Marker(
                 location=[row[col_lat], row[col_lon]],
-                popup=f"<b>{row[col_nom]}</b><br>État: {row.get(col_etat, 'N/A')}",
+                popup=f"<b>{row[col_nom]}</b><br>Type: {row.get(col_type, 'N/A')}<br>État: {row.get(col_etat, 'N/A')}",
                 icon=folium.Icon(color=couleur, icon="tint")
             ).add_to(marker_cluster)
 
+    # Marqueur de votre position
     folium.Marker(
         location=[lat_user, lon_user],
         popup=f"📍 Ma Base : {choix_base}",
         icon=folium.Icon(color="darkred", icon="user", prefix="fa"),
     ).add_to(carte_zone)
 
+    # Tracé de l'itinéraire
     if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
-        folium.PolyLine(
-            locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
-            color="blue",
-            weight=5,
-            opacity=0.8,
-            tooltip="Itinéraire cible"
-        ).add_to(carte_zone)
+        if pd.notnull(lat_cible) and pd.notnull(lon_cible):
+            folium.PolyLine(
+                locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
+                color="blue",
+                weight=5,
+                opacity=0.8,
+                tooltip="Itinéraire cible"
+            ).add_to(carte_zone)
 
-    # NOUVELLE MÉTHODE D'AFFICHAGE LÉGÈRE (Remplace st_folium)
+    # Affichage léger de la carte
     html_data = carte_zone.get_root().render()
     components.html(html_data, height=600)
 
@@ -199,7 +220,7 @@ with st.spinner("Génération de la carte en cours..."):
     )
 
 # ==========================================
-# 6. BASE DE DONNÉES & TÉLÉCHARGEMENTS
+# 7. BASE DE DONNÉES & TÉLÉCHARGEMENTS
 # ==========================================
 st.markdown("### 📋 Base d'inventaire tabulaire")
 
