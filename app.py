@@ -37,15 +37,15 @@ df_source = charger_donnees()
 df = df_source.copy()
 
 # ==========================================
-# 2. NETTOYAGE DES COORDONNÉES GPS (CORRECTION DU BUG)
+# 2. NETTOYAGE PUISSANT DES COORDONNÉES GPS
 # ==========================================
 col_lat = trouver_colonne(df, 'latitude')
 col_lon = trouver_colonne(df, 'longitude')
 
-# Forcer la conversion des virgules en points pour que la carte puisse les lire
 if col_lat and col_lon:
-    df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.strip(), errors='coerce')
-    df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.strip(), errors='coerce')
+    # On remplace les virgules par des points, on enlève les espaces et symboles bizarres
+    df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
+    df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
 
 # ==========================================
 # 3. FILTRES DANS LA BARRE LATÉRALE
@@ -77,10 +77,9 @@ if col_commune:
     if choix_commune != 'Toutes':
         df = df[df[col_commune] == choix_commune]
 
-# --- NOUVEAU : FILTRE PAR TYPE D'INFRASTRUCTURE ---
 if col_type:
     types_infra = sorted(df[col_type].dropna().astype(str).unique().tolist())
-    choix_types = st.sidebar.multiselect("Type d'infrastructure (Puits, Barrage...)", types_infra, default=types_infra)
+    choix_types = st.sidebar.multiselect("Type d'infrastructure", types_infra, default=types_infra)
     if choix_types:
         df = df[df[col_type].isin(choix_types)]
 
@@ -90,6 +89,12 @@ if col_etat:
     if choix_etats:
         df = df[df[col_etat].isin(choix_etats)]
 
+# Extraction des points valides pour la carte et les stats
+if col_lat and col_lon:
+    df_valide = df.dropna(subset=[col_lat, col_lon])
+else:
+    df_valide = pd.DataFrame()
+
 # ==========================================
 # 4. GÉOLOCALISATION ET ITINÉRAIRE
 # ==========================================
@@ -97,7 +102,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (15.5400, -7.0303),
+    "Adel Bagrou": (15.5399, -7.0302),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -107,8 +112,8 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5400, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0303, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5399, format="%.4f")
+    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0302, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
 
@@ -134,7 +139,7 @@ if not df.empty and col_nom:
         if pd.notnull(lat_cible) and pd.notnull(lon_cible):
             distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
             st.sidebar.success(f"📍 **{nom_infra}**")
-            st.sidebar.metric(label="Distance estimée (vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
+            st.sidebar.metric(label="Distance estimée", value=f"{distance_ouvrage:.2f} km")
             tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
         else:
             st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
@@ -143,18 +148,20 @@ if not df.empty and col_nom:
 # 5. INDICATEURS CLÉS DE SYNTHÈSE (KPIS)
 # ==========================================
 st.subheader("📊 Indicateurs de Synthèse & Couverture Pastorale")
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     st.metric(label="Ouvrages filtrés", value=f"{len(df)}")
 with col2:
-    if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
+    st.metric(label="📍 GPS Valides", value=f"{len(df_valide)}") # NOUVEAU COMPTEUR TRÈS UTILE !
 with col3:
-    if col_commune: st.metric(label="Communes", value=df[col_commune].nunique())
+    if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
 with col4:
+    if col_commune: st.metric(label="Communes", value=df[col_commune].nunique())
+with col5:
     if col_etat:
         fonctionnels = len(df[df[col_etat].astype(str).str.lower().str.contains('fonctionnel|bon', na=False)])
-        st.metric(label="Opérationnels / Bons", value=fonctionnels)
+        st.metric(label="Opérationnels", value=fonctionnels)
 
 st.markdown("---")
 
@@ -177,16 +184,18 @@ with st.spinner("Génération de la carte en cours..."):
 
     marker_cluster = MarkerCluster().add_to(carte_zone)
 
-    if col_lat and col_lon and col_nom:
-        # On ne garde que les lignes où les coordonnées sont valides (pas de NaN)
-        df_valide = df.dropna(subset=[col_lat, col_lon])
+    if not df_valide.empty:
         for index, row in df_valide.iterrows():
-            etat_ouvrage = str(row.get(col_etat, 'Inconnu')).lower()
-            couleur = "green" if "fonctionnel" in etat_ouvrage or "bon" in etat_ouvrage else "red"
+            # Sécurisation totale des textes (on remplace les apostrophes et guillemets pour éviter le crash JavaScript)
+            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", "’").replace('"', '’').replace('\n', ' ')
+            type_o = str(row.get(col_type, 'N/A')).replace("'", "’").replace('"', '’')
+            etat_o = str(row.get(col_etat, 'N/A')).replace("'", "’").replace('"', '’')
+            
+            couleur = "green" if "fonctionnel" in etat_o.lower() or "bon" in etat_o.lower() else "red"
             
             folium.Marker(
                 location=[row[col_lat], row[col_lon]],
-                popup=f"<b>{row[col_nom]}</b><br>Type: {row.get(col_type, 'N/A')}<br>État: {row.get(col_etat, 'N/A')}",
+                popup=folium.Popup(f"<b>{nom_o}</b><br>Type: {type_o}<br>État: {etat_o}", max_width=300),
                 icon=folium.Icon(color=couleur, icon="tint")
             ).add_to(marker_cluster)
 
