@@ -33,7 +33,7 @@ def trouver_colonne(dataframe, nom_cherche):
 
 @st.cache_data
 def charger_donnees():
-    # Remplacez par le nom exact de votre fichier Excel
+    # Remplacez par le nom exact de votre fichier Excel s'il est différent
     return pd.read_excel('infrastructures_unifiees.xlsx')
 
 df_source = charger_donnees()
@@ -195,8 +195,10 @@ if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
         tooltip="Itinéraire cible"
     ).add_to(carte_zone)
 
-# Affichage final de la carte
-st_folium(carte_zone, width="100%", height=550)
+# ============================================================
+# 👉 CORRECTION APPLIQUÉE ICI : use_container_width=True 👈
+# ============================================================
+st_folium(carte_zone, use_container_width=True, height=550)
 
 # Téléchargement de la carte en HTML pour usage hors-ligne
 html_data = carte_zone.get_root().render()
