@@ -33,7 +33,7 @@ def trouver_colonne(dataframe, nom_cherche):
 
 @st.cache_data
 def charger_donnees():
-    # Remplacez par le nom exact de votre fichier si besoin
+    # Remplacez par le nom exact de votre fichier Excel
     return pd.read_excel('infrastructures_unifiees.xlsx')
 
 df_source = charger_donnees()
@@ -44,10 +44,9 @@ df = df_source.copy()
 # ==========================================
 st.sidebar.header("🔍 Filtres Avancés")
 
-# Sécurisation des noms de colonnes
 col_wilaya = trouver_colonne(df, 'wilaya')
-col_moughataa = trouver_colonne(df, 'moughataa')
-col_commune = trouver_colonne(df, 'commune')
+col_moughataa = trouver_colonne(df, 'Moughataa')
+col_commune = trouver_colonne(df, 'Commune')
 col_etat = trouver_colonne(df, 'etat')
 col_nom = trouver_colonne(df, 'nom')
 col_lat = trouver_colonne(df, 'latitude')
@@ -62,13 +61,13 @@ if col_wilaya:
 
 if col_moughataa:
     moughataas = ['Toutes'] + sorted(df[col_moughataa].dropna().unique().tolist())
-    choix_moughataa = st.sidebar.selectbox('Sélectionner la moughataa', moughataas)
+    choix_moughataa = st.sidebar.selectbox('Sélectionner la Moughataa', moughataas)
     if choix_moughataa != 'Toutes':
         df = df[df[col_moughataa] == choix_moughataa]
 
 if col_commune:
     communes = ['Toutes'] + sorted(df[col_commune].dropna().unique().tolist())
-    choix_commune = st.sidebar.selectbox('Sélectionner la commune', communes)
+    choix_commune = st.sidebar.selectbox('Sélectionner la Commune', communes)
     if choix_commune != 'Toutes':
         df = df[df[col_commune] == choix_commune]
 
@@ -85,7 +84,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (15.5358, -7.0256),
+    "Adel Bagrou": (16.3265, -5.0683),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -95,12 +94,11 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5358, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0256, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=16.3265, format="%.4f")
+    lon_user = st.sidebar.number_input("Votre Longitude", value=-5.0683, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
 
-# Choix de la destination
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚗 Itinéraire vers une Infrastructure")
 tracer_ligne = False
@@ -112,7 +110,6 @@ if not df.empty and col_nom:
     df["label_affichage"] = df[col_nom].astype(str) + " (" + val_commune + " - " + val_moughataa + ")"
     labels_ouvrages = sorted(df["label_affichage"].dropna().unique().tolist())
     
-    # On ajoute une option vide pour ne pas tracer par défaut
     choix_label = st.sidebar.selectbox("Choisir un ouvrage cible", ["Aucun"] + labels_ouvrages)
 
     if choix_label != "Aucun":
@@ -125,7 +122,7 @@ if not df.empty and col_nom:
             distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
             
             st.sidebar.success(f"📍 **{nom_infra}**")
-            st.sidebar.metric(label="Distance estimée (vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
+            st.sidebar.metric(label="Distance estimée (piste/vol d'oiseau)", value=f"{distance_ouvrage:.2f} km")
             tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
         else:
             st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
@@ -150,12 +147,23 @@ with col4:
 st.markdown("---")
 
 # ==========================================
-# 5. CARTE INTERACTIVE FOLIUM
+# 5. CARTE INTERACTIVE FOLIUM (SATELLITE)
 # ==========================================
 st.markdown("### 🗺️ Carte d'intervention")
 
 # Initialiser la carte centrée sur la zone de départ
 carte_zone = folium.Map(location=[lat_user, lon_user], zoom_start=8)
+
+# Ajouter la couche Satellite Hybride Google
+folium.TileLayer(
+    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    attr='Google',
+    name='Satellite Hybride',
+    overlay=False,
+    control=True
+).add_to(carte_zone)
+folium.LayerControl().add_to(carte_zone)
+
 marker_cluster = MarkerCluster().add_to(carte_zone)
 
 # Ajouter les points d'eau filtrés sur la carte
@@ -177,7 +185,7 @@ folium.Marker(
     icon=folium.Icon(color="darkred", icon="user", prefix="fa"),
 ).add_to(carte_zone)
 
-# Tracer l'itinéraire si demandé
+# Tracer l'itinéraire direct si demandé
 if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
     folium.PolyLine(
         locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
@@ -187,14 +195,39 @@ if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
         tooltip="Itinéraire cible"
     ).add_to(carte_zone)
 
-# Affichage final de la carte dans Streamlit
+# Affichage final de la carte
 st_folium(carte_zone, width="100%", height=550)
 
+# Téléchargement de la carte en HTML pour usage hors-ligne
+html_data = carte_zone.get_root().render()
+st.download_button(
+    label="🌍 Télécharger la carte en Satellite_Hybride.html",
+    data=html_data,
+    file_name="Satellite_Hybride.html",
+    mime="text/html"
+)
+
 # ==========================================
-# 6. BASE DE DONNÉES ET TÉLÉCHARGEMENTS
+# 6. BASE DE DONNÉES & TÉLÉCHARGEMENTS
 # ==========================================
 st.markdown("### 📋 Base d'inventaire tabulaire")
-st.dataframe(df, use_container_width=True)
+
+# Création des liens GPS pour les applications mobiles (Organic Maps / Maps.me)
+if col_lat and col_lon and col_nom:
+    df["Lien_GPS_Mobile"] = (
+        "geo:" + df[col_lat].astype(str) + "," + df[col_lon].astype(str) 
+        + "?q=" + df[col_lat].astype(str) + "," + df[col_lon].astype(str) 
+        + "(" + df[col_nom].astype(str).str.replace(' ', '%20') + ")"
+    )
+
+# Affichage du tableau avec configuration de la colonne Lien GPS
+st.dataframe(
+    df, 
+    use_container_width=True,
+    column_config={
+        "Lien_GPS_Mobile": st.column_config.LinkColumn("🗺️ Ouvrir dans Organic Maps / Maps.me")
+    }
+)
 
 col_dl1, col_dl2 = st.columns(2)
 
