@@ -43,7 +43,7 @@ col_lat = trouver_colonne(df, 'latitude')
 col_lon = trouver_colonne(df, 'longitude')
 
 if col_lat and col_lon:
-    # On remplace les virgules par des points, on enlève les espaces et symboles bizarres
+    # On remplace les virgules par des points, on enlève les espaces
     df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
     df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
 
@@ -89,11 +89,22 @@ if col_etat:
     if choix_etats:
         df = df[df[col_etat].isin(choix_etats)]
 
-# Extraction des points valides pour la carte et les stats
+# --- BOUCLIER GÉOGRAPHIQUE ---
+# On ne garde que les coordonnées qui existent physiquement sur Terre !
 if col_lat and col_lon:
-    df_valide = df.dropna(subset=[col_lat, col_lon])
+    masque_valide = (
+        df[col_lat].notna() & 
+        df[col_lon].notna() & 
+        (df[col_lat] >= -90) & 
+        (df[col_lat] <= 90) & 
+        (df[col_lon] >= -180) & 
+        (df[col_lon] <= 180)
+    )
+    df_valide = df[masque_valide].copy()
+    erreurs_gps = len(df) - len(df_valide)
 else:
     df_valide = pd.DataFrame()
+    erreurs_gps = 0
 
 # ==========================================
 # 4. GÉOLOCALISATION ET ITINÉRAIRE
@@ -102,7 +113,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (16.3265, -5.0683),
+    "Adel Bagrou": (15.5339, -7.0304),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -112,8 +123,8 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=16.3265, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-5.0683, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5339, format="%.4f")
+    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0304, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
 
@@ -122,16 +133,16 @@ st.sidebar.subheader("🚗 Itinéraire vers une Infrastructure")
 tracer_ligne = False
 
 if not df.empty and col_nom:
-    val_commune = df[col_commune].astype(str) if col_commune else "Inconnue"
-    val_moughataa = df[col_moughataa].astype(str) if col_moughataa else "Inconnue"
+    val_commune = df_valide[col_commune].astype(str) if col_commune else "Inconnue"
+    val_moughataa = df_valide[col_moughataa].astype(str) if col_moughataa else "Inconnue"
     
-    df["label_affichage"] = df[col_nom].astype(str) + " (" + val_commune + " - " + val_moughataa + ")"
-    labels_ouvrages = sorted(df["label_affichage"].dropna().unique().tolist())
+    df_valide["label_affichage"] = df_valide[col_nom].astype(str) + " (" + val_commune + " - " + val_moughataa + ")"
+    labels_ouvrages = sorted(df_valide["label_affichage"].dropna().unique().tolist())
     
     choix_label = st.sidebar.selectbox("Choisir un ouvrage cible", ["Aucun"] + labels_ouvrages)
 
     if choix_label != "Aucun":
-        ouvrage_cible = df[df["label_affichage"] == choix_label].iloc[0]
+        ouvrage_cible = df_valide[df_valide["label_affichage"] == choix_label].iloc[0]
         lat_cible = ouvrage_cible.get(col_lat)
         lon_cible = ouvrage_cible.get(col_lon)
         nom_infra = ouvrage_cible.get(col_nom, "")
@@ -142,7 +153,7 @@ if not df.empty and col_nom:
             st.sidebar.metric(label="Distance estimée", value=f"{distance_ouvrage:.2f} km")
             tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
         else:
-            st.sidebar.warning("Coordonnées GPS absentes pour cet ouvrage.")
+            st.sidebar.warning("Coordonnées GPS absentes.")
 
 # ==========================================
 # 5. INDICATEURS CLÉS DE SYNTHÈSE (KPIS)
@@ -153,14 +164,17 @@ col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.metric(label="Ouvrages filtrés", value=f"{len(df)}")
 with col2:
-    st.metric(label="📍 GPS Valides", value=f"{len(df_valide)}") # NOUVEAU COMPTEUR TRÈS UTILE !
+    st.metric(label="✅ GPS Valides", value=f"{len(df_valide)}") 
 with col3:
-    if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
+    if erreurs_gps > 0:
+        st.metric(label="❌ Erreurs GPS", value=f"{erreurs_gps}") # Alerte les erreurs Excel !
+    else:
+        if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
 with col4:
-    if col_commune: st.metric(label="Communes", value=df[col_commune].nunique())
+    if col_commune: st.metric(label="Communes", value=df_valide[col_commune].nunique())
 with col5:
     if col_etat:
-        fonctionnels = len(df[df[col_etat].astype(str).str.lower().str.contains('fonctionnel|bon', na=False)])
+        fonctionnels = len(df_valide[df_valide[col_etat].astype(str).str.lower().str.contains('fonctionnel|bon', na=False)])
         st.metric(label="Opérationnels", value=fonctionnels)
 
 st.markdown("---")
@@ -186,16 +200,16 @@ with st.spinner("Génération de la carte en cours..."):
 
     if not df_valide.empty:
         for index, row in df_valide.iterrows():
-            # Sécurisation totale des textes (on remplace les apostrophes et guillemets pour éviter le crash JavaScript)
-            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", "’").replace('"', '’').replace('\n', ' ')
-            type_o = str(row.get(col_type, 'N/A')).replace("'", "’").replace('"', '’')
-            etat_o = str(row.get(col_etat, 'N/A')).replace("'", "’").replace('"', '’')
+            # Ultra sécurisation des textes pour ne jamais faire planter la carte
+            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", " ").replace('"', ' ').replace('<', '').replace('>', '')
+            type_o = str(row.get(col_type, 'N/A')).replace("'", " ").replace('"', ' ')
+            etat_o = str(row.get(col_etat, 'N/A')).replace("'", " ").replace('"', ' ')
             
             couleur = "green" if "fonctionnel" in etat_o.lower() or "bon" in etat_o.lower() else "red"
             
             folium.Marker(
                 location=[row[col_lat], row[col_lon]],
-                popup=folium.Popup(f"<b>{nom_o}</b><br>Type: {type_o}<br>État: {etat_o}", max_width=300),
+                popup=f"<b>{nom_o}</b><br>Type: {type_o}<br>État: {etat_o}",
                 icon=folium.Icon(color=couleur, icon="tint")
             ).add_to(marker_cluster)
 
@@ -217,7 +231,7 @@ with st.spinner("Génération de la carte en cours..."):
                 tooltip="Itinéraire cible"
             ).add_to(carte_zone)
 
-    # Affichage léger de la carte
+    # Affichage de la carte
     html_data = carte_zone.get_root().render()
     components.html(html_data, height=600)
 
