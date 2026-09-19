@@ -43,7 +43,6 @@ col_lat = trouver_colonne(df, 'latitude')
 col_lon = trouver_colonne(df, 'longitude')
 
 if col_lat and col_lon:
-    # On remplace les virgules par des points, on enlève les espaces
     df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
     df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
 
@@ -90,7 +89,6 @@ if col_etat:
         df = df[df[col_etat].isin(choix_etats)]
 
 # --- BOUCLIER GÉOGRAPHIQUE ---
-# On ne garde que les coordonnées qui existent physiquement sur Terre !
 if col_lat and col_lon:
     masque_valide = (
         df[col_lat].notna() & 
@@ -113,7 +111,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (15.5339, -7.0304),
+    "Adel Bagrou": (15.5399, -7.0304),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -123,7 +121,7 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5339, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5399, format="%.4f")
     lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0304, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
@@ -167,7 +165,7 @@ with col2:
     st.metric(label="✅ GPS Valides", value=f"{len(df_valide)}") 
 with col3:
     if erreurs_gps > 0:
-        st.metric(label="❌ Erreurs GPS", value=f"{erreurs_gps}") # Alerte les erreurs Excel !
+        st.metric(label="❌ Erreurs GPS", value=f"{erreurs_gps}")
     else:
         if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
 with col4:
@@ -200,10 +198,10 @@ with st.spinner("Génération de la carte en cours..."):
 
     if not df_valide.empty:
         for index, row in df_valide.iterrows():
-            # Ultra sécurisation des textes pour ne jamais faire planter la carte
-            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", " ").replace('"', ' ').replace('<', '').replace('>', '')
-            type_o = str(row.get(col_type, 'N/A')).replace("'", " ").replace('"', ' ')
-            etat_o = str(row.get(col_etat, 'N/A')).replace("'", " ").replace('"', ' ')
+            # NETTOYAGE EXTRÊME : On supprime les retours à la ligne (\n, \r) et les slashs qui font planter JavaScript
+            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
+            type_o = str(row.get(col_type, 'N/A')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
+            etat_o = str(row.get(col_etat, 'N/A')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
             
             couleur = "green" if "fonctionnel" in etat_o.lower() or "bon" in etat_o.lower() else "red"
             
@@ -231,7 +229,7 @@ with st.spinner("Génération de la carte en cours..."):
                 tooltip="Itinéraire cible"
             ).add_to(carte_zone)
 
-    # Affichage de la carte
+    # Affichage léger de la carte
     html_data = carte_zone.get_root().render()
     components.html(html_data, height=600)
 
