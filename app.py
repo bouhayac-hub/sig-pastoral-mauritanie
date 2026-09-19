@@ -102,7 +102,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📍 Position / Base de départ")
 
 bases_terrain = {
-    "Adel Bagrou": (15.5399, -7.0302),
+    "Adel Bagrou": (16.3265, -5.0683),
     "Bassikounou": (15.7500, -5.9167),
     "Néma": (16.6167, -7.2500),
     "Kiffa": (16.6167, -11.4000),
@@ -112,8 +112,8 @@ bases_terrain = {
 choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
 
 if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5399, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0302, format="%.4f")
+    lat_user = st.sidebar.number_input("Votre Latitude", value=16.3265, format="%.4f")
+    lon_user = st.sidebar.number_input("Votre Longitude", value=-5.0683, format="%.4f")
 else:
     lat_user, lon_user = bases_terrain[choix_base]
 
