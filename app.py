@@ -1,273 +1,241 @@
-import io
-import math
+import streamlit as st
+import pandas as pd
 import folium
 from folium.plugins import MarkerCluster
-import pandas as pd
-import streamlit as st
-import streamlit.components.v1 as components
+from streamlit_folium import st_folium
+import math
+import io
 
-# ==========================================
-# 1. CONFIGURATION ET CHARGEMENT DES DONNÉES
-# ==========================================
 st.set_page_config(
-    page_title="SIG Pastoral Mauritanie", 
-    layout="wide", 
+    page_title="SIG Pastoral Mauritanie",
+    page_icon="🌍",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
-def calculer_distance_km(lat1, lon1, lat2, lon2):
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
-
-def trouver_colonne(dataframe, nom_cherche):
-    for col in dataframe.columns:
-        if str(col).strip().lower() == nom_cherche.lower():
-            return col
-    return None
+# Style CSS personnalisé
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 24px;
+        font-weight: bold;
+        color: #1b4332;
+        margin-bottom: 2px;
+    }
+    .sub-header {
+        font-size: 14px;
+        color: #52796f;
+        margin-bottom: 15px;
+    }
+    .metric-card {
+        background: #f8f9fa;
+        border-left: 5px solid #2d6a4f;
+        padding: 10px 14px;
+        border-radius: 4px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_data
 def charger_donnees():
-    return pd.read_excel('infrastructures_unifiees.xlsx')
+    try:
+        return pd.read_excel('infrastructures_unifiees.xlsx')
+    except Exception as e:
+        return None
 
-df_source = charger_donnees()
-df = df_source.copy()
+df = charger_donnees()
 
-# ==========================================
-# 2. NETTOYAGE PUISSANT DES COORDONNÉES GPS
-# ==========================================
-col_lat = trouver_colonne(df, 'latitude')
-col_lon = trouver_colonne(df, 'longitude')
+if df is None:
+    st.error("Le fichier 'infrastructures_unifiees.xlsx' n'a pas été trouvé dans le répertoire de travail.")
+    st.info("Assurez-vous que 'infrastructures_unifiees.xlsx' se trouve dans le même dossier que 'app.py'.")
+    st.stop()
 
-if col_lat and col_lon:
-    df[col_lat] = pd.to_numeric(df[col_lat].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
-    df[col_lon] = pd.to_numeric(df[col_lon].astype(str).str.replace(',', '.').str.replace(' ', '').str.replace('°', ''), errors='coerce')
+# Barre latérale : Filtres
+st.sidebar.image("https://img.icons8.com/color/96/oasis.png", width=60)
+st.sidebar.title("SIG Pastoral")
+st.sidebar.caption("Plateforme d'aide à la décision et de zonage")
 
-# ==========================================
-# 3. FILTRES DANS LA BARRE LATÉRALE
-# ==========================================
-st.sidebar.header("🔍 Filtres Avancés")
+st.sidebar.subheader("Filtrage Géographique")
+wilayas_dispos = sorted(df['wilaya'].dropna().unique())
+sel_wilayas = st.sidebar.multiselect("Wilaya", options=wilayas_dispos, default=[])
 
-col_wilaya = trouver_colonne(df, 'wilaya')
-col_moughataa = trouver_colonne(df, 'Moughataa')
-col_commune = trouver_colonne(df, 'Commune')
-col_etat = trouver_colonne(df, 'etat')
-col_nom = trouver_colonne(df, 'nom')
-col_type = trouver_colonne(df, 'type_ouvrage')
+df_zone = df[df['wilaya'].isin(sel_wilayas)] if sel_wilayas else df
 
-if col_wilaya:
-    wilayas = ['Toutes'] + sorted(df[col_wilaya].dropna().unique().tolist())
-    choix_wilaya = st.sidebar.selectbox('Sélectionner la Wilaya', wilayas)
-    if choix_wilaya != 'Toutes':
-        df = df[df[col_wilaya] == choix_wilaya]
+moughataas_dispos = sorted(df_zone['moughataa'].dropna().unique())
+sel_moughataas = st.sidebar.multiselect("Moughataa", options=moughataas_dispos, default=[])
+if sel_moughataas:
+    df_zone = df_zone[df_zone['moughataa'].isin(sel_moughataas)]
 
-if col_moughataa:
-    moughataas = ['Toutes'] + sorted(df[col_moughataa].dropna().unique().tolist())
-    choix_moughataa = st.sidebar.selectbox('Sélectionner la Moughataa', moughataas)
-    if choix_moughataa != 'Toutes':
-        df = df[df[col_moughataa] == choix_moughataa]
+st.sidebar.subheader("Filtrage Thématique")
+categories_dispos = sorted(df['categorie'].dropna().unique())
+sel_cats = st.sidebar.multiselect("Catégorie d'infrastructure", options=categories_dispos, default=[])
+if sel_cats:
+    df_zone = df_zone[df_zone['categorie'].isin(sel_cats)]
 
-if col_commune:
-    communes = ['Toutes'] + sorted(df[col_commune].dropna().unique().tolist())
-    choix_commune = st.sidebar.selectbox('Sélectionner la Commune', communes)
-    if choix_commune != 'Toutes':
-        df = df[df[col_commune] == choix_commune]
-
-if col_type:
-    types_infra = sorted(df[col_type].dropna().astype(str).unique().tolist())
-    choix_types = st.sidebar.multiselect("Type d'infrastructure", types_infra, default=types_infra)
-    if choix_types:
-        df = df[df[col_type].isin(choix_types)]
-
-if col_etat:
-    etats = sorted(df[col_etat].dropna().astype(str).unique().tolist())
-    choix_etats = st.sidebar.multiselect("État de l'infrastructure", etats, default=etats)
-    if choix_etats:
-        df = df[df[col_etat].isin(choix_etats)]
-
-# --- BOUCLIER GÉOGRAPHIQUE ---
-if col_lat and col_lon:
-    masque_valide = (
-        df[col_lat].notna() & 
-        df[col_lon].notna() & 
-        (df[col_lat] >= -90) & 
-        (df[col_lat] <= 90) & 
-        (df[col_lon] >= -180) & 
-        (df[col_lon] <= 180)
-    )
-    df_valide = df[masque_valide].copy()
-    erreurs_gps = len(df) - len(df_valide)
-else:
-    df_valide = pd.DataFrame()
-    erreurs_gps = 0
-
-# ==========================================
-# 4. GÉOLOCALISATION ET ITINÉRAIRE
-# ==========================================
-st.sidebar.markdown("---")
-st.sidebar.subheader("📍 Position / Base de départ")
-
-bases_terrain = {
-    "Adel Bagrou": (15.5399, -7.0304),
-    "Bassikounou": (15.7500, -5.9167),
-    "Néma": (16.6167, -7.2500),
-    "Kiffa": (16.6167, -11.4000),
-    "Autre (Saisie manuelle)": (0.0, 0.0),
-}
-
-choix_base = st.sidebar.selectbox("Choisir votre zone / base", list(bases_terrain.keys()))
-
-if choix_base == "Autre (Saisie manuelle)":
-    lat_user = st.sidebar.number_input("Votre Latitude", value=15.5399, format="%.4f")
-    lon_user = st.sidebar.number_input("Votre Longitude", value=-7.0304, format="%.4f")
-else:
-    lat_user, lon_user = bases_terrain[choix_base]
+etats_dispos = sorted(df['etat'].dropna().unique())
+sel_etats = st.sidebar.multiselect("État physique", options=etats_dispos, default=[])
+if sel_etats:
+    df_zone = df_zone[df_zone['etat'].isin(sel_etats)]
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🚗 Itinéraire vers une Infrastructure")
-tracer_ligne = False
+st.sidebar.subheader("Paramètres de l'Analyse Pastorale")
+rayon_buffer = st.sidebar.slider("Rayon d'action pastorale (km)", min_value=3, max_value=25, value=15, step=1,
+                                 help="Norme sahélienne standard : 5 km (petits ruminants), 15 km (bovins en saison sèche).")
+montrer_degrades = st.sidebar.checkbox("Afficher le potentiel des puits à réhabiliter", value=True)
 
-if not df.empty and col_nom:
-    val_commune = df_valide[col_commune].astype(str) if col_commune else "Inconnue"
-    val_moughataa = df_valide[col_moughataa].astype(str) if col_moughataa else "Inconnue"
-    
-    df_valide["label_affichage"] = df_valide[col_nom].astype(str) + " (" + val_commune + " - " + val_moughataa + ")"
-    labels_ouvrages = sorted(df_valide["label_affichage"].dropna().unique().tolist())
-    
-    choix_label = st.sidebar.selectbox("Choisir un ouvrage cible", ["Aucun"] + labels_ouvrages)
+# En-tête principal
+st.markdown('<div class="main-header">Système d\'Information Géographique Pastoral — Mauritanie</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Identification, analyse spatiale et planification des interventions d\'urgence pastorale</div>', unsafe_allow_html=True)
 
-    if choix_label != "Aucun":
-        ouvrage_cible = df_valide[df_valide["label_affichage"] == choix_label].iloc[0]
-        lat_cible = ouvrage_cible.get(col_lat)
-        lon_cible = ouvrage_cible.get(col_lon)
-        nom_infra = ouvrage_cible.get(col_nom, "")
-        
-        if pd.notnull(lat_cible) and pd.notnull(lon_cible):
-            distance_ouvrage = calculer_distance_km(lat_user, lon_user, lat_cible, lon_cible)
-            st.sidebar.success(f"📍 **{nom_infra}**")
-            st.sidebar.metric(label="Distance estimée", value=f"{distance_ouvrage:.2f} km")
-            tracer_ligne = st.sidebar.checkbox("Afficher l'itinéraire sur la carte", value=True)
-        else:
-            st.sidebar.warning("Coordonnées GPS absentes.")
-
-# ==========================================
-# 5. INDICATEURS CLÉS DE SYNTHÈSE (KPIS)
-# ==========================================
-st.subheader("📊 Indicateurs de Synthèse & Couverture Pastorale")
+# Indicateurs de bord
 col1, col2, col3, col4, col5 = st.columns(5)
 
-with col1:
-    st.metric(label="Ouvrages filtrés", value=f"{len(df)}")
-with col2:
-    st.metric(label="✅ GPS Valides", value=f"{len(df_valide)}") 
-with col3:
-    if erreurs_gps > 0:
-        st.metric(label="❌ Erreurs GPS", value=f"{erreurs_gps}")
+total_pts = len(df_zone)
+df_puits = df_zone[df_zone['categorie'] == 'Hydraulique pastorale']
+puits_actifs = df_puits[~df_puits['etat'].str.contains('hors|réhab', case=False, na=False)]
+puits_degrades = df_puits[df_puits['etat'].str.contains('hors|réhab', case=False, na=False)]
+
+surface_unitaire = math.pi * (rayon_buffer ** 2)
+surface_active_km2 = len(puits_actifs) * surface_unitaire
+potentiel_rehab_km2 = len(puits_degrades) * surface_unitaire
+
+col1.metric("Ouvrages sélectionnés", f"{total_pts:,}")
+col2.metric("Puits fonctionnels", f"{len(puits_actifs):,}")
+col3.metric("Puits à réhabiliter", f"{len(puits_degrades):,}")
+col4.metric(f"Desserte active (R={rayon_buffer}km)", f"{surface_active_km2:,.0f} km²")
+col5.metric(f"Potentiel déblocable", f"{potentiel_rehab_km2:,.0f} km²")
+
+# Onglets
+tab_carte, tab_zonage, tab_donnees = st.tabs([
+    "🗺️ Carte Globale & Répartition",
+    "🛰️ Analyse de Couverture & Pâturages (Buffers)",
+    "📋 Données & Exports"
+])
+
+def get_color(etat):
+    e = str(etat).lower()
+    if 'bon' in e: return '#2d6a4f'
+    if 'lég' in e or 'leger' in e: return '#f39c12'
+    return '#d62828'
+
+with tab_carte:
+    if total_pts > 0:
+        moy_lat = df_zone['latitude'].mean()
+        moy_lon = df_zone['longitude'].mean()
+        carte_inv = folium.Map(location=[moy_lat, moy_lon], zoom_start=8, tiles='OpenStreetMap')
+        cluster = MarkerCluster(name="Regroupements d'ouvrages").add_to(carte_inv)
+
+        for _, r in df_zone.head(1500).iterrows():
+            txt_pop = f"""
+            <b>{r['nom']}</b><br>
+            <b>Type :</b> {r['type_ouvrage']}<br>
+            <b>Localité :</b> {r['localite']} ({r['moughataa']}, {r['wilaya']})<br>
+            <b>État :</b> {r['etat']}<br>
+            <b>Gestion :</b> {r['responsable'] or r['gestion']}
+            """
+            folium.CircleMarker(
+                location=[r['latitude'], r['longitude']],
+                radius=5,
+                color=get_color(r['etat']),
+                fill=True,
+                fill_opacity=0.85,
+                popup=folium.Popup(txt_pop, max_width=280)
+            ).add_to(cluster)
+
+        folium.LayerControl().add_to(carte_inv)
+        st_folium(carte_inv, width="100%", height=550)
+        if total_pts > 1500:
+            st.caption(f"ℹ️ Affichage optimisé à 1 500 points sur {total_pts} pour garantir une réactivité maximale.")
     else:
-        if col_wilaya: st.metric(label="Wilayas", value=df[col_wilaya].nunique())
-with col4:
-    if col_commune: st.metric(label="Communes", value=df_valide[col_commune].nunique())
-with col5:
-    if col_etat:
-        fonctionnels = len(df_valide[df_valide[col_etat].astype(str).str.lower().str.contains('fonctionnel|bon', na=False)])
-        st.metric(label="Opérationnels", value=fonctionnels)
+        st.warning("Aucune infrastructure ne correspond aux critères de filtre.")
 
-st.markdown("---")
+with tab_zonage:
+    st.subheader(f"Modélisation de l'empreinte pastorale ({rayon_buffer} km autour des points d'eau)")
+    st.caption("Cercles verts : zones pâturables sécurisées par un point d'eau opérationnel. Cercles rouges en pointillés : pâturages enclavés ou sous-exploités dont l'accès dépend de la réhabilitation du point d'eau.")
+    
+    if len(df_puits) > 0:
+        moy_lat = df_puits['latitude'].mean()
+        moy_lon = df_puits['longitude'].mean()
+        carte_zone = folium.Map(location=[moy_lat, moy_lon], zoom_start=9, tiles='OpenStreetMap')
 
-# ==========================================
-# 6. CARTE INTERACTIVE FOLIUM
-# ==========================================
-st.markdown("### 🗺️ Carte d'intervention")
+        fg_verts = folium.FeatureGroup(name="Zones couvertes (Puits fonctionnels)")
+        fg_rouges = folium.FeatureGroup(name="Zones à débloquer (À réhabiliter)")
 
-with st.spinner("Génération de la carte en cours..."):
-    carte_zone = folium.Map(location=[lat_user, lon_user], zoom_start=8)
+        for _, p in puits_actifs.head(500).iterrows():
+            folium.Circle(
+                location=[p['latitude'], p['longitude']],
+                radius=rayon_buffer * 1000,
+                color='#2d6a4f',
+                weight=1,
+                fill=True,
+                fill_color='#52b788',
+                fill_opacity=0.15
+            ).add_to(fg_verts)
+            folium.CircleMarker(
+                location=[p['latitude'], p['longitude']],
+                radius=4,
+                color='#1b4332',
+                fill=True,
+                fill_opacity=1,
+                popup=f"<b>{p['nom']}</b> ({p['localite']})<br>État: {p['etat']}"
+            ).add_to(fg_verts)
 
-    folium.TileLayer(
-        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-        attr='Google',
-        name='Satellite Hybride',
-        overlay=False,
-        control=True
-    ).add_to(carte_zone)
-    folium.LayerControl().add_to(carte_zone)
+        if montrer_degrades:
+            for _, p in puits_degrades.head(500).iterrows():
+                folium.Circle(
+                    location=[p['latitude'], p['longitude']],
+                    radius=rayon_buffer * 1000,
+                    color='#d62828',
+                    weight=1.5,
+                    dash_array='4, 6',
+                    fill=True,
+                    fill_color='#e63946',
+                    fill_opacity=0.10
+                ).add_to(fg_rouges)
+                folium.CircleMarker(
+                    location=[p['latitude'], p['longitude']],
+                    radius=4,
+                    color='#a4161a',
+                    fill=True,
+                    fill_opacity=1,
+                    popup=f"<b>{p['nom']} (À RÉHABILITER)</b> ({p['localite']})<br>État: {p['etat']}"
+                ).add_to(fg_rouges)
 
-    marker_cluster = MarkerCluster().add_to(carte_zone)
+        fg_verts.add_to(carte_zone)
+        if montrer_degrades:
+            fg_rouges.add_to(carte_zone)
 
-    if not df_valide.empty:
-        for index, row in df_valide.iterrows():
-            # NETTOYAGE EXTRÊME : On supprime les retours à la ligne (\n, \r) et les slashs qui font planter JavaScript
-            nom_o = str(row.get(col_nom, 'Inconnu')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
-            type_o = str(row.get(col_type, 'N/A')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
-            etat_o = str(row.get(col_etat, 'N/A')).replace("'", " ").replace('"', ' ').replace('\n', ' ').replace('\r', ' ').replace('\\', ' ')
-            
-            couleur = "green" if "fonctionnel" in etat_o.lower() or "bon" in etat_o.lower() else "red"
-            
-            folium.Marker(
-                location=[row[col_lat], row[col_lon]],
-                popup=f"<b>{nom_o}</b><br>Type: {type_o}<br>État: {etat_o}",
-                icon=folium.Icon(color=couleur, icon="tint")
-            ).add_to(marker_cluster)
+        folium.LayerControl().add_to(carte_zone)
+        st_folium(carte_zone, width="100%", height=550)
+    else:
+        st.warning("Aucun point d'eau présent dans la sélection actuelle.")
 
-    # Marqueur de votre position
-    folium.Marker(
-        location=[lat_user, lon_user],
-        popup=f"📍 Ma Base : {choix_base}",
-        icon=folium.Icon(color="darkred", icon="user", prefix="fa"),
-    ).add_to(carte_zone)
-
-    # Tracé de l'itinéraire
-    if tracer_ligne and "lat_cible" in locals() and "lon_cible" in locals():
-        if pd.notnull(lat_cible) and pd.notnull(lon_cible):
-            folium.PolyLine(
-                locations=[[lat_user, lon_user], [lat_cible, lon_cible]],
-                color="blue",
-                weight=5,
-                opacity=0.8,
-                tooltip="Itinéraire cible"
-            ).add_to(carte_zone)
-
-    # Affichage léger de la carte
-    html_data = carte_zone.get_root().render()
-    components.html(html_data, height=600)
-
-    st.download_button(
-        label="🌍 Télécharger la carte en Satellite_Hybride.html",
-        data=html_data,
-        file_name="Satellite_Hybride.html",
-        mime="text/html"
+with tab_donnees:
+    st.subheader("Base d'inventaire tabulaire")
+    st.dataframe(
+        df_zone[['id', 'categorie', 'type_ouvrage', 'nom', 'localite', 'wilaya', 'moughataa', 'commune', 'etat', 'profondeur_m', 'latitude', 'longitude']],
+        use_container_width=True,
+        hide_index=True
     )
 
-# ==========================================
-# 7. BASE DE DONNÉES & TÉLÉCHARGEMENTS
-# ==========================================
-st.markdown("### 📋 Base d'inventaire tabulaire")
-
-if col_lat and col_lon and col_nom:
-    df["Lien_GPS_Mobile"] = (
-        "geo:" + df[col_lat].astype(str) + "," + df[col_lon].astype(str) 
-        + "?q=" + df[col_lat].astype(str) + "," + df[col_lon].astype(str) 
-        + "(" + df[col_nom].astype(str).str.replace(' ', '%20') + ")"
-    )
-
-st.dataframe(
-    df, 
-    use_container_width=True,
-    column_config={
-        "Lien_GPS_Mobile": st.column_config.LinkColumn("🗺️ Ouvrir dans Organic Maps / Maps.me")
-    }
-)
-
-col_dl1, col_dl2 = st.columns(2)
-
-with col_dl1:
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Télécharger la sélection en CSV", data=csv, file_name="selection_pastorale.csv", mime="text/csv")
-
-with col_dl2:
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Ouvrages')
-    st.download_button("📥 Télécharger la sélection en Excel", data=buffer, file_name="selection_pastorale.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        csv_bytes = df_zone.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger la sélection en CSV",
+            data=csv_bytes,
+            file_name="selection_pastorale.csv",
+            mime="text/csv"
+        )
+    with col_dl2:
+        # Export Excel direct
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_zone.to_excel(writer, index=False, sheet_name='Ouvrages')
+        excel_data = output.getvalue()
+        st.download_button(
+            label="📊 Télécharger la sélection en Excel (.xlsx)",
+            data=excel_data,
+            file_name="selection_pastorale.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
